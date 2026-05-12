@@ -52,6 +52,8 @@ func printUsage() {
     """)
 }
 
+setbuf(stdout, nil) // line-buffer is unhelpful when piping/redirecting
+
 let options = parseArgs(CommandLine.arguments)
 if options.help {
     printUsage()

@@ -27,7 +27,7 @@ enum Swizzler {
         swap(
             UIImpactFeedbackGenerator.self,
             #selector(UIImpactFeedbackGenerator.impactOccurred as (UIImpactFeedbackGenerator) -> () -> Void),
-            #selector(UIImpactFeedbackGenerator.hb_impactOccurred)
+            #selector(UIImpactFeedbackGenerator.hb_impactOccurred as (UIImpactFeedbackGenerator) -> () -> Void)
         )
         if #available(iOS 13.0, *) {
             swap(
