@@ -5,7 +5,7 @@ import AppKit
 struct CLIOptions {
     var port: UInt16 = 49374
     var verbose: Bool = false
-    var leadDelayMS: Int = 35
+    var leadDelayMS: Int = 120
     var help: Bool = false
 }
 
@@ -55,7 +55,7 @@ func printUsage() {
       --port,    -p N   Port to listen on (default: 49374)
       --delay,   -d MS  Wait this many ms before firing each haptic so the
                         tick lands a beat after the tap, not on top of it
-                        (default: 35, set to 0 to fire immediately)
+                        (default: 120, set to 0 to fire immediately)
       --verbose, -v     Print every event as it arrives
       --help,    -h     Show this help
 

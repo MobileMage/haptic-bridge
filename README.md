@@ -29,7 +29,7 @@ Run it while you develop.
 haptic-bridge-host --verbose
 ```
 
-It logs every event it sees. By default it waits 35 ms before firing each haptic, so the tick lands a beat after your tap instead of stamping on top of it. Pass `--delay 0` to fire instantly, or `--delay 80` for more anticipation, or whatever feels right on your hardware.
+It logs every event it sees. By default it waits 120 ms before firing each haptic, so the tick lands a beat after your tap instead of stamping on top of it. That number came out of actually tapping a demo app for a while and settling on the one that felt least synthetic. Pass `--delay 0` to fire instantly, or any other number of milliseconds if 120 doesn't feel right on your hardware.
 
 If your Mac has a Force Touch trackpad you will feel the ticks. If it doesn't (external keyboard, a desktop Mac without a Magic Trackpad 2) the bridge still wires up, you just won't feel anything on the way out.
 
