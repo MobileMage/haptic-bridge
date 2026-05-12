@@ -10,9 +10,9 @@ final class HapticServer {
     private let decoder = JSONDecoder()
     private var listener: NWListener?
 
-    init(port: UInt16, verbose: Bool) {
+    init(port: UInt16, verbose: Bool, leadDelay: TimeInterval) {
         self.port = NWEndpoint.Port(rawValue: port) ?? 49374
-        self.player = HapticPlayer(verbose: verbose)
+        self.player = HapticPlayer(verbose: verbose, leadDelay: leadDelay)
         self.verbose = verbose
     }
 

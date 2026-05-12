@@ -1,0 +1,35 @@
+name: HapticBridgeExample
+options:
+  bundleIdPrefix: com.mobilemage.hapticbridge
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+packages:
+  HapticBridge:
+    path: ../../
+targets:
+  HapticBridgeExample:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+    dependencies:
+      - package: HapticBridge
+        product: HapticBridge
+    info:
+      path: Sources/Info.plist
+      properties:
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        CFBundleDisplayName: HapticBridge Demo
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.mobilemage.hapticbridge.example
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+        SWIFT_VERSION: "5.9"
+        CODE_SIGN_STYLE: Automatic

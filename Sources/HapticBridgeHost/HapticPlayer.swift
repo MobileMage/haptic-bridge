@@ -4,21 +4,31 @@ import AppKit
 struct HapticPlayer {
 
     let verbose: Bool
+    let leadDelay: TimeInterval
 
     func play(_ event: HapticHostEvent) {
         let performer = NSHapticFeedbackManager.defaultPerformer
-        switch event.type {
-        case .impact:
-            playImpact(event, performer: performer)
-        case .selection:
-            performer.perform(.alignment, performanceTime: .now)
-        case .notification:
-            playNotification(event, performer: performer)
-        case .coreHaptic:
-            playCoreHaptic(event, performer: performer)
+        let fire: () -> Void = {
+            switch event.type {
+            case .impact:
+                self.playImpact(event, performer: performer)
+            case .selection:
+                performer.perform(.alignment, performanceTime: .now)
+            case .notification:
+                self.playNotification(event, performer: performer)
+            case .coreHaptic:
+                self.playCoreHaptic(event, performer: performer)
+            }
         }
+
+        if leadDelay > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + leadDelay, execute: fire)
+        } else {
+            fire()
+        }
+
         if verbose {
-            print("[haptic-bridge-host] played \(describe(event))")
+            print("[haptic-bridge-host] played \(describe(event)) (lead \(Int(leadDelay * 1000))ms)")
         }
     }
 
@@ -26,8 +36,8 @@ struct HapticPlayer {
 
     private func playImpact(_ event: HapticHostEvent, performer: NSHapticFeedbackPerformer) {
         // The trackpad has three patterns: .generic (firm), .alignment (light tick),
-        // .level (rising). We map the five iOS impact styles onto those + an
-        // optional double-tap for the heaviest cases. It's lossy by design.
+        // .levelChange (rising). We map five iOS impact styles onto those plus an
+        // optional double-tap for the heaviest cases. Lossy by design.
         switch event.style {
         case .heavy, .rigid:
             performer.perform(.generic, performanceTime: .now)

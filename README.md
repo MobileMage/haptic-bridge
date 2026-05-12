@@ -1,21 +1,20 @@
 # haptic-bridge
 
-The iOS Simulator silently eats every haptic you fire. `UIImpactFeedbackGenerator`, `UISelectionFeedbackGenerator`, `UINotificationFeedbackGenerator` — all no-ops. Same for `CHHapticEngine`. Apple's been told about it since 2016 (rdar://28788551, still open) and the workaround has always been "plug a phone in."
+I was wiring a haptic into a button last week. Ran the app in the simulator, tapped the button, felt nothing. Tapped it again. Still nothing. It took me longer than I want to admit to remember why.
 
-That's annoying. So this is a small thing that gets you halfway there: it intercepts the simulator's silent haptic calls and replays a rough approximation on your Mac's Force Touch trackpad. You click around your simulator app and feel a tick where you should, on the same trackpad your hand is already resting on. Not great fidelity — the trackpad just doesn't have it — but enough to catch "oh I forgot to wire a haptic on this button" during dev without grabbing a device.
+The iOS Simulator doesn't play haptics. Never has. Every `UIImpactFeedbackGenerator`, every `UISelectionFeedbackGenerator`, every `CHHapticEngine` call gets silently dropped. The radar for it ([rdar://28788551](https://openradar.appspot.com/28788551)) was filed in 2016, and as of writing it is still open. Apple's guidance has always been the same line: use a real device. That is a fine answer when a real device is plugged in next to you. Most of the time I am heads down in the simulator and reaching for the phone every few minutes to confirm a single call broke my flow worse than the missing feedback ever did.
 
-## How it works
+So I went looking. The trackpad on every MacBook since 2015 has a Taptic Engine inside it. You can drive that engine from any AppKit process with three lines on `NSHapticFeedbackManager`. People have known this for years. There are tiny CLIs out there that prove it works, like [ForceTouchVibrationCLI](https://github.com/lapfelix/ForceTouchVibrationCLI), and full menu bar apps built around it like [HapticKey](https://github.com/niw/HapticKey). What I could not find anywhere was something that wired the simulator's silent haptic calls onto the trackpad I already had my palm resting on.
 
-Two pieces:
+This is that.
 
-- **`HapticBridge`** — a Swift package you drop into your iOS target. On launch you call `HapticBridge.install()`. In simulator builds it swizzles the three feedback generator methods, captures every call, and fires a tiny JSON POST at `127.0.0.1:49374`. On device, on Catalyst, in release builds — it's a no-op.
-- **`haptic-bridge-host`** — a small Mac CLI that listens on that port and replays the event using `NSHapticFeedbackManager`.
+It is two pieces. The first is a Swift package you drop into your iOS target. At app launch you call `HapticBridge.install()`. In simulator builds the package swizzles the three feedback generators, captures every fire, and POSTs a small JSON event to `127.0.0.1:49374`. On device, in Mac Catalyst, in release builds, it does nothing at all. The second piece is a small Mac CLI that listens on that port and replays each event using `NSHapticFeedbackManager`. You leave it running in a terminal tab while you develop.
 
-The mapping has to be lossy. iOS gives you five impact styles, three notification types, plus arbitrary Core Haptics curves. The trackpad gives you `.generic`, `.alignment`, and `.levelChange`. So `.heavy` and `.rigid` become a double-tap on `.generic`, `.light` and `.soft` become a single `.alignment`, `notification(.error)` becomes a triple-tap, and so on. You won't feel an AHAP curve. You will feel something fire in the right place at the right time.
+The mapping is lossy on purpose. iOS gives you five impact styles, three notification types, and arbitrary Core Haptics curves on top of that. The trackpad gives you exactly three patterns: `.generic`, `.alignment`, `.levelChange`. So I had to fake the rest. Heavy impacts become a `.generic` twice in quick succession. Notification errors become `.generic` three times. Successes become `.alignment` twice. The point is not to recreate the feel of a real device. The point is to feel that something fired, in the right spot, with enough distinction between patterns that you can tell them apart blindly.
 
 ## Setup
 
-### Build the Mac host once
+Clone and build the Mac host once.
 
 ```sh
 git clone https://github.com/MobileMage/haptic-bridge.git
@@ -24,15 +23,17 @@ swift build -c release
 cp .build/release/haptic-bridge-host /usr/local/bin/
 ```
 
-### Run it while you're developing
+Run it while you develop.
 
 ```sh
 haptic-bridge-host --verbose
 ```
 
-Leave it in a terminal tab. It logs every event it gets. If your machine has a Force Touch trackpad, you'll feel them. If it doesn't, you'll just see the log.
+It logs every event it sees. By default it waits 35 ms before firing each haptic, so the tick lands a beat after your tap instead of stamping on top of it. Pass `--delay 0` to fire instantly, or `--delay 80` for more anticipation, or whatever feels right on your hardware.
 
-### Add the package to your iOS app
+If your Mac has a Force Touch trackpad you will feel the ticks. If it doesn't (external keyboard, a desktop Mac without a Magic Trackpad 2) the bridge still wires up, you just won't feel anything on the way out.
+
+Add the package to your iOS app.
 
 ```swift
 dependencies: [
@@ -48,7 +49,7 @@ targets: [
 ]
 ```
 
-### Call install() somewhere early
+Call `install()` early in app startup.
 
 ```swift
 import HapticBridge
@@ -60,15 +61,14 @@ struct MyApp: App {
         HapticBridge.install()
         #endif
     }
-    // ...
 }
 ```
 
-Every existing `UIImpactFeedbackGenerator().impactOccurred()` and friends now also fire the trackpad. You don't have to change any call sites.
+Every existing `UIImpactFeedbackGenerator().impactOccurred()`, every `UISelectionFeedbackGenerator().selectionChanged()`, every `UINotificationFeedbackGenerator().notificationOccurred(_:)` now also fires the trackpad. You do not change any call sites.
 
 ## Manual events
 
-If you want to fire something without going through UIKit's generators (handy when poking at Core Haptics or testing the bridge itself):
+I did not try to swizzle `CHHapticEngine`. Its API surface is too wide for a weekend project and the trackpad cannot reproduce arbitrary intensity and sharpness curves anyway. If you want a rough proxy, or if you want to test the bridge itself without going through UIKit's generators, you can fire events directly:
 
 ```swift
 HapticBridge.fire(.impact(.heavy))
@@ -77,7 +77,7 @@ HapticBridge.fire(.notification(.error))
 HapticBridge.fire(.coreHaptic(intensity: 0.8, sharpness: 0.4))
 ```
 
-You can also smoke-test the host without an iOS project at all:
+You can also smoke test the host without an iOS project at all:
 
 ```sh
 curl -X POST http://127.0.0.1:49374/haptic \
@@ -85,36 +85,49 @@ curl -X POST http://127.0.0.1:49374/haptic \
   -d '{"type":"impact","style":"heavy"}'
 ```
 
-## Mapping
+## How calls map onto the trackpad
 
-| iOS call                                  | Mac trackpad                              |
-| ----------------------------------------- | ----------------------------------------- |
-| `impactOccurred()` with `.light` / `.soft`  | `.alignment`                              |
-| `impactOccurred()` with `.medium`           | `.generic`                                |
-| `impactOccurred()` with `.heavy` / `.rigid` | `.generic` × 2                            |
-| `selectionChanged()`                      | `.alignment`                              |
-| `notificationOccurred(.success)`          | `.alignment` × 2                          |
-| `notificationOccurred(.warning)`          | `.levelChange`                            |
-| `notificationOccurred(.error)`            | `.generic` × 3                            |
-| `.coreHaptic(intensity:sharpness:)` manual call | bucketed `.alignment` / `.levelChange` / `.generic` by intensity |
+| iOS call                                       | Trackpad                             |
+| ---------------------------------------------- | ------------------------------------ |
+| `impactOccurred()` with `.light` or `.soft`    | `.alignment`                         |
+| `impactOccurred()` with `.medium`              | `.generic`                           |
+| `impactOccurred()` with `.heavy` or `.rigid`   | `.generic` twice in quick succession |
+| `selectionChanged()`                           | `.alignment`                         |
+| `notificationOccurred(.success)`               | `.alignment` twice                   |
+| `notificationOccurred(.warning)`               | `.levelChange`                       |
+| `notificationOccurred(.error)`                 | `.generic` three times               |
+| Manual `coreHaptic(intensity:sharpness:)`      | bucketed by intensity                |
 
-Change `Sources/HapticBridgeHost/HapticPlayer.swift` if you want a different feel — there's nothing magical about my choices, I just picked combinations that read distinctly from each other on my own MacBook.
+If a mapping does not feel right on your machine, change `Sources/HapticBridgeHost/HapticPlayer.swift`. There is nothing precious about my choices. I picked combinations I could tell apart blindly on a MacBook Pro and shipped those.
+
+## Example app
+
+There is a SwiftUI demo under `Examples/HapticBridgeExample`. It depends on the package as a local path and exposes every supported haptic as a button in a list. From the repo root:
+
+```sh
+brew install xcodegen
+cd Examples/HapticBridgeExample
+xcodegen generate
+open HapticBridgeExample.xcodeproj
+```
+
+Run it on any iOS simulator. With the host running and your palm on the trackpad, every row turns into a tick.
 
 ## What this isn't
 
-- **Not a Core Haptics emulator.** AHAP files, intensity/sharpness curves, and `CHHapticEngine` continuous events aren't replayed faithfully. The trackpad has three patterns, that's the ceiling. Use this for sanity-checking that calls fire, not for designing how a haptic should feel.
-- **Not a substitute for a real device.** If you're tuning a haptic for feel, plug in your phone. This is for "did I remember to call it?"
-- **Not for production.** Wrap `install()` in `#if DEBUG` and forget about it. The swizzles only do anything inside the simulator anyway, but it's still a debug-only thing.
+A Core Haptics emulator. AHAP files, sharpness curves, continuous `CHHapticEngine` events will not come through faithfully. The trackpad has three patterns. That is the whole instrument.
 
-## Why I built it
+A substitute for a real device. If you are tuning a haptic for feel, plug your phone in. This handles the much more boring question of "did my call fire at all on this tap" so that you don't have to grab the phone for that one.
 
-Most of the time when I'm working on haptics in an iOS app, what I actually want to know is "did the call happen on this tap" — not "what does this haptic feel like." Round-tripping to a real device every time I want to verify that first question is slow. This handles it and stays out of the way for the second.
+A production dependency. Wrap `install()` in `#if DEBUG` and stop thinking about it. The swizzles only take effect inside the simulator, but the spirit is still debug only.
 
 ## Credits
 
-- [lapfelix/ForceTouchVibrationCLI](https://github.com/lapfelix/ForceTouchVibrationCLI) — proves you can drive the trackpad from a CLI in about ten lines of Swift.
-- [niw/HapticKey](https://github.com/niw/HapticKey) — full menu-bar app around `NSHapticFeedbackManager`. Worth reading for the AppKit details.
-- rdar://28788551 — Apple radar from 2016 asking for simulator haptics. Still open in 2026.
+[ForceTouchVibrationCLI](https://github.com/lapfelix/ForceTouchVibrationCLI) was the first thing I read that proved the Taptic Engine could be driven from a CLI in about ten lines of Swift.
+
+[HapticKey](https://github.com/niw/HapticKey) is a full menu bar app built on top of `NSHapticFeedbackManager`. Worth reading for the AppKit details.
+
+[rdar://28788551](https://openradar.appspot.com/28788551) is the Apple radar from 2016 asking for simulator haptics. Open at time of writing.
 
 ## License
 

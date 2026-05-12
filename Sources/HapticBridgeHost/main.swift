@@ -5,6 +5,7 @@ import AppKit
 struct CLIOptions {
     var port: UInt16 = 49374
     var verbose: Bool = false
+    var leadDelayMS: Int = 35
     var help: Bool = false
 }
 
@@ -22,6 +23,14 @@ func parseArgs(_ argv: [String]) -> CLIOptions {
                 FileHandle.standardError.write(Data("error: --port requires a number\n".utf8))
                 exit(64)
             }
+        case "--delay", "-d":
+            i += 1
+            if i < argv.count, let ms = Int(argv[i]), ms >= 0, ms <= 2000 {
+                options.leadDelayMS = ms
+            } else {
+                FileHandle.standardError.write(Data("error: --delay expects a number of milliseconds between 0 and 2000\n".utf8))
+                exit(64)
+            }
         case "--verbose", "-v":
             options.verbose = true
         case "--help", "-h":
@@ -37,18 +46,21 @@ func parseArgs(_ argv: [String]) -> CLIOptions {
 
 func printUsage() {
     print("""
-    haptic-bridge-host — relay iOS-Simulator haptics to the Mac trackpad
+    haptic-bridge-host: relay iOS Simulator haptics to the Mac trackpad
 
     USAGE:
-      haptic-bridge-host [--port N] [--verbose]
+      haptic-bridge-host [--port N] [--delay MS] [--verbose]
 
     OPTIONS:
-      --port, -p    Port to listen on (default: 49374)
-      --verbose, -v Print every event as it arrives
-      --help, -h    Show this help
+      --port,    -p N   Port to listen on (default: 49374)
+      --delay,   -d MS  Wait this many ms before firing each haptic so the
+                        tick lands a beat after the tap, not on top of it
+                        (default: 35, set to 0 to fire immediately)
+      --verbose, -v     Print every event as it arrives
+      --help,    -h     Show this help
 
-    Pair with the HapticBridge Swift package inside your simulator app and call
-    HapticBridge.install() during app startup.
+    Pair with the HapticBridge Swift package inside your simulator app and
+    call HapticBridge.install() during app startup.
     """)
 }
 
@@ -63,7 +75,8 @@ if options.help {
 // Ensure AppKit is fully initialized so NSHapticFeedbackManager works.
 _ = NSApplication.shared
 
-let server = HapticServer(port: options.port, verbose: options.verbose)
+let leadDelay = TimeInterval(options.leadDelayMS) / 1000.0
+let server = HapticServer(port: options.port, verbose: options.verbose, leadDelay: leadDelay)
 do {
     try server.start()
 } catch {
